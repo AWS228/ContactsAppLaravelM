@@ -50,7 +50,7 @@ jobs:
           cd /var/www/laravelapp
           if [ ! -f ".env" ]; then
             if [ -f ".env.example" ]; then
-              cp .env.example .env
+              sudo mv .env.example .env
             else
               echo "APP_NAME=Laravel" > .env
               echo "APP_ENV=production" >> .env
