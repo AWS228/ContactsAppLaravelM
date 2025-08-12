@@ -41,7 +41,7 @@ jobs:
         run: |
           APP_DIR="/var/www/laravelapp"
           sudo mkdir -p $APP_DIR
-          sudo rsync -a --delete "$GITHUB_WORKSPACE"/ $APP_DIR/
+          sudo rsync -a --delete --exclude '.env' "$GITHUB_WORKSPACE"/ $APP_DIR/
           cd $APP_DIR
 
       - name: Update incompatible dependencies
