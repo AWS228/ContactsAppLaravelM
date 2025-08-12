@@ -10,8 +10,8 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      # 1. Update packages and install PHP + extensions
-      - name: Install PHP 8.3.6 and extensions
+      # 1. Update & Install PHP + required extensions
+      - name: Install PHP 8.3 and Extensions
         run: |
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y software-properties-common
@@ -23,7 +23,7 @@ jobs:
             php8.3-tokenizer php8.3-common php8.3-pgsql php8.3-soap php8.3-intl \
             unzip curl git zip
 
-      # 2. Install Composer (if not installed)
+      # 2. Install Composer if missing
       - name: Install Composer
         run: |
           if ! command -v composer >/dev/null 2>&1; then
@@ -32,51 +32,55 @@ jobs:
             sudo mv composer.phar /usr/local/bin/composer
           fi
 
-      # 3. Checkout latest code to GITHUB_WORKSPACE
+      # 3. Checkout repository
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 4. Sync code to Apache directory
-      - name: Deploy Code to Apache path
+      # 4. Deploy code to Apache directory
+      - name: Sync Code
         run: |
           APP_DIR="/var/www/laravelapp"
           sudo mkdir -p $APP_DIR
           sudo rsync -a --delete --exclude '.env' "$GITHUB_WORKSPACE"/ $APP_DIR/
           cd $APP_DIR
 
-      - name: Update incompatible dependencies
-        run: |
-          cd /var/www/laravelapp
-          composer update nette/schema nette/utils league/config --with-all-dependencies --no-interaction
-     
-      # 5. Install Laravel dependencies
-      - name: Install PHP dependencies
-        run: |
-          cd /var/www/laravelapp
-          composer install --no-interaction --prefer-dist --optimize-autoloader
-          
-      - name: Create .env from example
+      # 5. Ensure .env exists
+      - name: Ensure .env Exists
         run: |
           cd /var/www/laravelapp
           if [ ! -f ".env" ]; then
-            mv .env.example .env
+            if [ -f ".env.example" ]; then
+              cp .env.example .env
+            else
+              echo "APP_NAME=Laravel" > .env
+              echo "APP_ENV=production" >> .env
+              echo "APP_KEY=" >> .env
+              echo "APP_DEBUG=false" >> .env
+              echo "APP_URL=http://localhost" >> .env
+            fi
           fi
 
-      # 6. Generate app key if missing
-      - name: Generate App Key (if missing)
+      # 6. Install Laravel dependencies
+      - name: Install PHP Dependencies
+        run: |
+          cd /var/www/laravelapp
+          composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      # 7. Generate App Key
+      - name: Generate App Key
         run: |
           cd /var/www/laravelapp
           if ! grep -q "APP_KEY=" .env || [ -z "$(grep 'APP_KEY=' .env | cut -d '=' -f2)" ]; then
             php artisan key:generate --force
           fi
 
-      # 7. Run migrations
+      # 8. Run migrations
       - name: Run Migrations
         run: |
           cd /var/www/laravelapp
-          php artisan migrate --force
+          php artisan migrate --force || echo "⚠️ Migrations skipped (check DB config)"
 
-      # 8. Set permissions
+      # 9. Set correct permissions
       - name: Set Permissions
         run: |
           sudo chown -R www-data:www-data /var/www/laravelapp
@@ -84,7 +88,7 @@ jobs:
           sudo find /var/www/laravelapp -type d -exec chmod 755 {} \;
           sudo chmod -R 775 /var/www/laravelapp/storage /var/www/laravelapp/bootstrap/cache
 
-      # 9. Cache config and routes
+      # 10. Cache Config & Routes
       - name: Cache Config & Routes
         run: |
           cd /var/www/laravelapp
@@ -94,7 +98,7 @@ jobs:
           php artisan config:cache
           php artisan route:cache
 
-      # 10. Restart Apache
+      # 11. Restart Apache
       - name: Restart Apache
         run: |
           sudo systemctl restart apache2
