@@ -44,6 +44,11 @@ jobs:
           sudo rsync -a --delete "$GITHUB_WORKSPACE"/ $APP_DIR/
           cd $APP_DIR
 
+      - name: Update incompatible dependencies
+        run: |
+          cd /var/www/laravelapp
+          composer update nette/schema nette/utils league/config --with-all-dependencies --no-interaction
+     
       # 5. Install Laravel dependencies
       - name: Install PHP dependencies
         run: |
