@@ -59,7 +59,7 @@ jobs:
         run: |
           cd /var/www/laravelapp
           if [ ! -f ".env" ]; then
-            cp .env.example .env
+            mv .env.example .env
           fi
 
       # 6. Generate app key if missing
