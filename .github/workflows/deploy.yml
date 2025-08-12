@@ -60,6 +60,11 @@ jobs:
             fi
           fi
 
+      - name: Update incompatible dependencies
+        run: |
+          cd /var/www/laravelapp
+          composer update nette/schema nette/utils league/config --with-all-dependencies --no-interaction
+
       # 6. Install Laravel dependencies
       - name: Install PHP Dependencies
         run: |
