@@ -1,0 +1,88 @@
+name: Deploy Laravel to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      # 1. Update packages and install PHP + extensions
+      - name: Install PHP 8.3.6 and extensions
+        run: |
+          sudo apt update && sudo apt upgrade -y
+          sudo apt install -y software-properties-common
+          sudo add-apt-repository ppa:ondrej/php -y
+          sudo apt update
+          sudo apt install -y \
+            php8.3 php8.3-cli php8.3-mbstring php8.3-xml php8.3-bcmath \
+            php8.3-curl php8.3-mysql php8.3-fpm php8.3-zip php8.3-gd \
+            php8.3-tokenizer php8.3-common php8.3-pgsql php8.3-soap php8.3-intl \
+            unzip curl git zip
+
+      # 2. Install Composer (if not installed)
+      - name: Install Composer
+        run: |
+          if ! command -v composer >/dev/null 2>&1; then
+            cd ~
+            curl -sS https://getcomposer.org/installer | php
+            sudo mv composer.phar /usr/local/bin/composer
+          fi
+
+      # 3. Checkout latest code to GITHUB_WORKSPACE
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 4. Sync code to Apache directory
+      - name: Deploy Code to Apache path
+        run: |
+          APP_DIR="/var/www/laravelapp"
+          sudo mkdir -p $APP_DIR
+          sudo rsync -a --delete "$GITHUB_WORKSPACE"/ $APP_DIR/
+          cd $APP_DIR
+
+      # 5. Install Laravel dependencies
+      - name: Install PHP dependencies
+        run: |
+          cd /var/www/laravelapp
+          composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      # 6. Generate app key if missing
+      - name: Generate App Key (if missing)
+        run: |
+          cd /var/www/laravelapp
+          if ! grep -q "APP_KEY=" .env || [ -z "$(grep 'APP_KEY=' .env | cut -d '=' -f2)" ]; then
+            php artisan key:generate
+          fi
+
+      # 7. Run migrations
+      - name: Run Migrations
+        run: |
+          cd /var/www/laravelapp
+          php artisan migrate --force
+
+      # 8. Set permissions
+      - name: Set Permissions
+        run: |
+          sudo chown -R www-data:www-data /var/www/laravelapp
+          sudo find /var/www/laravelapp -type f -exec chmod 644 {} \;
+          sudo find /var/www/laravelapp -type d -exec chmod 755 {} \;
+          sudo chmod -R 775 /var/www/laravelapp/storage /var/www/laravelapp/bootstrap/cache
+
+      # 9. Cache config and routes
+      - name: Cache Config & Routes
+        run: |
+          cd /var/www/laravelapp
+          php artisan config:clear
+          php artisan route:clear
+          php artisan view:clear
+          php artisan config:cache
+          php artisan route:cache
+
+      # 10. Restart Apache
+      - name: Restart Apache
+        run: |
+          sudo systemctl restart apache2
