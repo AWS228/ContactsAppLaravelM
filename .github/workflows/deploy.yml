@@ -32,13 +32,15 @@ jobs:
             sudo mv composer.phar /usr/local/bin/composer
           fi
 
-      # 3. Checkout repository (goes into $GITHUB_WORKSPACE)
+      # 3. Checkout repository
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 4. Set Laravel project path (workspace path)
-      - name: Set Laravel Path Variable
-        run: echo "APP_DIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+      # 4. Define paths
+      - name: Set Paths
+        run: |
+          echo "APP_DIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+          echo "DEPLOY_DIR=/var/www/ContactsAppLaravelM" >> $GITHUB_ENV
 
       # 5. Update incompatible dependencies (PHP 8.3 fix)
       - name: Update incompatible dependencies
@@ -52,7 +54,7 @@ jobs:
           cd $APP_DIR
           composer install --no-interaction --prefer-dist --optimize-autoloader
 
-      # 7. Move .env.example to .env if missing
+      # 7. Prepare .env
       - name: Prepare .env File
         run: |
           cd $APP_DIR
@@ -60,38 +62,46 @@ jobs:
             cp .env.example .env
           fi
 
-      # 8. Generate App Key if missing
+      # 8. Generate App Key
       - name: Generate App Key
         run: |
           cd $APP_DIR
           if ! grep -q "^APP_KEY=base64" .env || [ -z "$(grep '^APP_KEY=' .env | cut -d '=' -f2)" ]; then
-            php artisan key:generate 
+            php artisan key:generate
           fi
 
-      # 9. Run migrations
-      - name: Run Migrations
+      # 9. Move code to Apache directory
+      - name: Deploy to Apache Directory
         run: |
-          cd $APP_DIR
-          php artisan migrate  || echo "⚠️ Migrations skipped (check DB config)"
+          sudo rm -rf $DEPLOY_DIR
+          sudo mkdir -p $DEPLOY_DIR
+          sudo cp -r $APP_DIR/* $DEPLOY_DIR
+          sudo cp -r $APP_DIR/.env $DEPLOY_DIR/
 
       # 10. Set correct permissions
       - name: Set Permissions
         run: |
-          sudo chown -R ubuntu:ubuntu $APP_DIR
-          sudo find $APP_DIR -type f -exec chmod 644 {} \;
-          sudo find $APP_DIR -type d -exec chmod 755 {} \;
-          sudo chmod -R 775 $APP_DIR/storage $APP_DIR/bootstrap/cache
+          sudo chown -R www-data:www-data $DEPLOY_DIR
+          sudo find $DEPLOY_DIR -type f -exec chmod 644 {} \;
+          sudo find $DEPLOY_DIR -type d -exec chmod 755 {} \;
+          sudo chmod -R 775 $DEPLOY_DIR/storage $DEPLOY_DIR/bootstrap/cache
 
-      # 11. Cache Config & Routes
-      - name: Cache Config & Routes
+      # 11. Run migrations
+      - name: Run Migrations
         run: |
-          cd $APP_DIR
+          cd $DEPLOY_DIR
+          php artisan migrate --force || echo "⚠️ Migrations skipped (check DB config)"
+
+      # 12. Clear & cache Laravel configs
+      - name: Clear & Cache Configs
+        run: |
+          cd $DEPLOY_DIR
           php artisan config:clear
           php artisan route:clear
           php artisan view:clear
           php artisan config:cache
           php artisan route:cache
 
-      # 12. Restart Apache
+      # 13. Restart Apache
       - name: Restart Apache
         run: sudo systemctl restart apache2
