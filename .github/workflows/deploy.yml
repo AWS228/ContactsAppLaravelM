@@ -41,51 +41,68 @@ jobs:
         run: |
           APP_DIR="/var/www/laravelapp"
           sudo mkdir -p $APP_DIR
-          sudo rsync -a --delete --exclude '.env' "$GITHUB_WORKSPACE"/ $APP_DIR/
+          sudo rsync -a --delete "$GITHUB_WORKSPACE"/ $APP_DIR/
           cd $APP_DIR
 
-      # 5. Ensure .env exists
-      - name: Ensure .env Exists
+      # 5. Setup .env with Secrets
+      - name: Setup .env File
+        env:
+          APP_NAME: ${{ secrets.APP_NAME }}
+          APP_ENV: ${{ secrets.APP_ENV }}
+          APP_URL: ${{ secrets.APP_URL }}
+          DB_CONNECTION: ${{ secrets.DB_CONNECTION }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           cd /var/www/laravelapp
-          if [ ! -f ".env" ]; then
-            if [ -f ".env.example" ]; then
-              sudo mv .env.example .env
-            else
-              echo "APP_NAME=Laravel" > .env
-              echo "APP_ENV=production" >> .env
-              echo "APP_KEY=" >> .env
-              echo "APP_DEBUG=false" >> .env
-              echo "APP_URL=http://localhost" >> .env
-            fi
+          # Always replace with example
+          if [ -f ".env.example" ]; then
+            cp .env.example .env
+          else
+            echo "APP_NAME=${APP_NAME}" > .env
           fi
 
+          # Update environment values
+          sed -i "s|^APP_NAME=.*|APP_NAME=${APP_NAME}|g" .env
+          sed -i "s|^APP_ENV=.*|APP_ENV=${APP_ENV}|g" .env
+          sed -i "s|^APP_URL=.*|APP_URL=${APP_URL}|g" .env
+          sed -i "s|^DB_CONNECTION=.*|DB_CONNECTION=${DB_CONNECTION}|g" .env
+          sed -i "s|^DB_HOST=.*|DB_HOST=${DB_HOST}|g" .env
+          sed -i "s|^DB_PORT=.*|DB_PORT=${DB_PORT}|g" .env
+          sed -i "s|^DB_DATABASE=.*|DB_DATABASE=${DB_DATABASE}|g" .env
+          sed -i "s|^DB_USERNAME=.*|DB_USERNAME=${DB_USERNAME}|g" .env
+          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_PASSWORD}|g" .env
+
+      # 6. Update incompatible dependencies (PHP 8.3 fix)
       - name: Update incompatible dependencies
         run: |
           cd /var/www/laravelapp
           composer update nette/schema nette/utils league/config --with-all-dependencies --no-interaction
 
-      # 6. Install Laravel dependencies
+      # 7. Install Laravel dependencies
       - name: Install PHP Dependencies
         run: |
           cd /var/www/laravelapp
           composer install --no-interaction --prefer-dist --optimize-autoloader
 
-      # 7. Generate App Key
+      # 8. Generate App Key if missing
       - name: Generate App Key
         run: |
           cd /var/www/laravelapp
-          if ! grep -q "APP_KEY=" .env || [ -z "$(grep 'APP_KEY=' .env | cut -d '=' -f2)" ]; then
+          if ! grep -q "^APP_KEY=base64" .env || [ -z "$(grep '^APP_KEY=' .env | cut -d '=' -f2)" ]; then
             php artisan key:generate --force
           fi
 
-      # 8. Run migrations
+      # 9. Run migrations
       - name: Run Migrations
         run: |
           cd /var/www/laravelapp
           php artisan migrate --force || echo "⚠️ Migrations skipped (check DB config)"
 
-      # 9. Set correct permissions
+      # 10. Set correct permissions
       - name: Set Permissions
         run: |
           sudo chown -R www-data:www-data /var/www/laravelapp
@@ -93,7 +110,7 @@ jobs:
           sudo find /var/www/laravelapp -type d -exec chmod 755 {} \;
           sudo chmod -R 775 /var/www/laravelapp/storage /var/www/laravelapp/bootstrap/cache
 
-      # 10. Cache Config & Routes
+      # 11. Cache Config & Routes
       - name: Cache Config & Routes
         run: |
           cd /var/www/laravelapp
@@ -103,7 +120,7 @@ jobs:
           php artisan config:cache
           php artisan route:cache
 
-      # 11. Restart Apache
+      # 12. Restart Apache
       - name: Restart Apache
         run: |
           sudo systemctl restart apache2
